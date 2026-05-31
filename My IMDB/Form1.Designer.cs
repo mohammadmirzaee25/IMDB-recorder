@@ -35,7 +35,10 @@ namespace My_IMDB
             this.dataGridView1 = new System.Windows.Forms.DataGridView();
             this.btnsearch = new System.Windows.Forms.Button();
             this.addbtn = new System.Windows.Forms.Button();
+            this.pictureBox1 = new System.Windows.Forms.PictureBox();
+            this.btnshowposter = new System.Windows.Forms.Button();
             ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).BeginInit();
+            ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).BeginInit();
             this.SuspendLayout();
             // 
             // label1
@@ -101,12 +104,36 @@ namespace My_IMDB
             this.addbtn.UseVisualStyleBackColor = false;
             this.addbtn.Click += new System.EventHandler(this.addbtn_Click);
             // 
+            // pictureBox1
+            // 
+            this.pictureBox1.BackColor = System.Drawing.Color.Silver;
+            this.pictureBox1.BorderStyle = System.Windows.Forms.BorderStyle.Fixed3D;
+            this.pictureBox1.Location = new System.Drawing.Point(592, 144);
+            this.pictureBox1.Name = "pictureBox1";
+            this.pictureBox1.Size = new System.Drawing.Size(259, 217);
+            this.pictureBox1.TabIndex = 8;
+            this.pictureBox1.TabStop = false;
+            // 
+            // btnshowposter
+            // 
+            this.btnshowposter.BackColor = System.Drawing.Color.Black;
+            this.btnshowposter.ForeColor = System.Drawing.Color.Yellow;
+            this.btnshowposter.Location = new System.Drawing.Point(612, 99);
+            this.btnshowposter.Name = "btnshowposter";
+            this.btnshowposter.Size = new System.Drawing.Size(207, 38);
+            this.btnshowposter.TabIndex = 9;
+            this.btnshowposter.Text = "show poster";
+            this.btnshowposter.UseVisualStyleBackColor = false;
+            this.btnshowposter.Click += new System.EventHandler(this.btnshowposter_Click);
+            // 
             // Form1
             // 
             this.AutoScaleDimensions = new System.Drawing.SizeF(10F, 20F);
             this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
             this.BackColor = System.Drawing.Color.FromArgb(((int)(((byte)(255)))), ((int)(((byte)(255)))), ((int)(((byte)(128)))));
             this.ClientSize = new System.Drawing.Size(863, 440);
+            this.Controls.Add(this.btnshowposter);
+            this.Controls.Add(this.pictureBox1);
             this.Controls.Add(this.addbtn);
             this.Controls.Add(this.btnsearch);
             this.Controls.Add(this.dataGridView1);
@@ -121,6 +148,7 @@ namespace My_IMDB
             this.Name = "Form1";
             this.Text = "Form1";
             ((System.ComponentModel.ISupportInitialize)(this.dataGridView1)).EndInit();
+            ((System.ComponentModel.ISupportInitialize)(this.pictureBox1)).EndInit();
             this.ResumeLayout(false);
             this.PerformLayout();
 
@@ -134,6 +162,8 @@ namespace My_IMDB
         private System.Windows.Forms.DataGridView dataGridView1;
         private System.Windows.Forms.Button btnsearch;
         private System.Windows.Forms.Button addbtn;
+        private System.Windows.Forms.PictureBox pictureBox1;
+        private System.Windows.Forms.Button btnshowposter;
     }
 }
 

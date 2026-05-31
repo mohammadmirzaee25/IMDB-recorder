@@ -7,6 +7,9 @@ using System.Net.Http;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using Newtonsoft.Json.Linq;
+using System.Drawing;
+using System.IO;
+using System.Net.Http;
 
 namespace My_IMDB
 {
@@ -842,6 +845,103 @@ namespace My_IMDB
                 // Make DataGridView read-only
                 dataGridView1.ReadOnly = true;
             }
+        }
+        private async Task LoadMoviePoster(string movieName, string movieYear)
+        {
+            try
+            {
+                string encodedTitle = Uri.EscapeDataString(movieName);
+                string url = $"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&t={encodedTitle}&plot=short";
+
+                using (var httpClient = new HttpClient())
+                {
+                    string jsonResponse = await httpClient.GetStringAsync(url);
+                    JObject data = JObject.Parse(jsonResponse);
+
+                    if (data["Response"]?.ToString() == "True")
+                    {
+                        string posterUrl = data["Poster"]?.ToString();
+
+                        if (!string.IsNullOrEmpty(posterUrl) && posterUrl != "N/A")
+                        {
+                            // Download the poster image
+                            using (var posterClient = new HttpClient())
+                            {
+                                byte[] imageData = await posterClient.GetByteArrayAsync(posterUrl);
+                                using (var ms = new System.IO.MemoryStream(imageData))
+                                {
+                                    Image posterImage = Image.FromStream(ms);
+                                    pictureBox1.Image = posterImage;
+                                    pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
+                                }
+                            }
+                        }
+                        else
+                        {
+                            pictureBox1.Image = null;
+                            MessageBox.Show($"No poster found for '{movieName}'.",
+                                "Poster Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        }
+                    }
+                    else
+                    {
+                        pictureBox1.Image = null;
+                        MessageBox.Show($"Movie '{movieName}' not found.",
+                            "Movie Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error loading poster: {ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                pictureBox1.Image = null;
+            }
+        }
+
+        private async void btnshowposter_Click(object sender, EventArgs e)
+        {
+            // Check if a movie is selected
+            if (dataGridView1.SelectedRows.Count == 0 && dataGridView1.SelectedCells.Count == 0)
+            {
+                MessageBox.Show("Please select a movie first by clicking on any cell.", "No Selection",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            MovieInfo selectedMovie = null;
+
+            // Get selected movie from either selected row or selected cell
+            if (dataGridView1.SelectedRows.Count > 0)
+            {
+                selectedMovie = (MovieInfo)dataGridView1.SelectedRows[0].DataBoundItem;
+            }
+            else if (dataGridView1.SelectedCells.Count > 0)
+            {
+                int rowIndex = dataGridView1.SelectedCells[0].RowIndex;
+                selectedMovie = (MovieInfo)dataGridView1.Rows[rowIndex].DataBoundItem;
+            }
+
+            if (selectedMovie == null)
+            {
+                MessageBox.Show("Please select a valid movie.", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            // Show loading indicator
+            pictureBox1.Image = null;
+            this.Cursor = Cursors.WaitCursor;
+            btnshowposter.Enabled = false;
+            btnshowposter.Text = "Loading Poster...";
+
+            // Load the poster
+            await LoadMoviePoster(selectedMovie.Name, selectedMovie.Year);
+
+            // Reset button
+            this.Cursor = Cursors.Default;
+            btnshowposter.Enabled = true;
+            btnshowposter.Text = "Show Poster";
         }
     }
 
