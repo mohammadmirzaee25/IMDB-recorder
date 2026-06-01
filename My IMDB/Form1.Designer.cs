@@ -155,7 +155,7 @@ namespace My_IMDB
             this.rbseries.TabIndex = 11;
             this.rbseries.Text = "Series";
             this.rbseries.UseVisualStyleBackColor = true;
-            this.rbseries.CheckedChanged += new System.EventHandler(this.rbseiries_CheckedChanged);
+            this.rbseries.CheckedChanged += new System.EventHandler(this.rbseries_CheckedChanged);
             // 
             // groupBox1
             // 
