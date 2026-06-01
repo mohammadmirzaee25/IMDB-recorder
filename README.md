@@ -8,13 +8,32 @@ A Windows Forms application for keeping a personal record of movies and TV serie
 - Search through your collection
 - Simple Windows Forms interface
 - Organized code with separate classes
+- Uses local .mdf database for data storage
 
 ## Technologies Used
 
 - C#
-- .NET Framework (Windows Forms)
+- .NET Framework 4.5
+- SQL Server LocalDB (for .mdf database)
+- System.Data.SqlClient
+- Windows Forms
 
-## How to Run
+## Prerequisites
+
+The installer (Setup.exe) automatically installs:
+- .NET Framework 4.5
+- SQL Server 2012 Express LocalDB
+
+No manual installation needed.
+
+## How to Install
+
+1. Download `Setup.exe` and `My IMDB.msi` from this repository
+2. Run `Setup.exe` (not the .msi file alone)
+3. Follow the installation wizard
+4. Launch from Start Menu or Desktop shortcut
+
+## How to Run from Source
 
 1. Clone this repository
 2. Open `My IMDB.sln` in Visual Studio
@@ -26,6 +45,12 @@ A Windows Forms application for keeping a personal record of movies and TV serie
 - `.gitignore` - Git ignore rules
 - `.gitattributes` - Git attributes
 
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Database connection error | SQL Server LocalDB not installed. Run Setup.exe again. |
+| Setup.exe does nothing | Temporarily disable antivirus and retry |
 
 ## Author
 
