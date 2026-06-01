@@ -22,16 +22,14 @@ A Windows Forms application for keeping a personal record of movies and TV serie
 
 The installer (Setup.exe) automatically installs:
 - .NET Framework 4.5
-- SQL Server 2012 Express LocalDB
-
-No manual installation needed.
+- SQL Server 2012 Express LocalDB (manual installation needed).
 
 ## How to Install
 
 1. Download `Setup.exe` and `My IMDB.msi` from this repository
 2. Run `Setup.exe` (not the .msi file alone)
 3. Follow the installation wizard
-4. Launch from Start Menu or Desktop shortcut
+4. Launch from Destination you chose or Desktop shortcut
 
 ## How to Run from Source
 
