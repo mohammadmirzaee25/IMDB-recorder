@@ -15,13 +15,40 @@ namespace My_IMDB
 {
     public partial class Form1 : Form
     {
-        private const string OMDB_API_KEY = "a9e37134";
+        // Replace the single API key with a list of keys
+        private static readonly string[] OMDB_API_KEYS = new string[]
+        {
+    "a9e37134",  // Your original key
+    "406ab9a4",  // Your new key 1
+    "dd8596be",  // Your new key 2
+    "ccf8fcc7"   // Your new key 3
+        };
+        private bool SwitchToNextApiKey()
+        {
+            if (currentApiKeyIndex < OMDB_API_KEYS.Length - 1)
+            {
+                currentApiKeyIndex++;
+                MessageBox.Show($"Switching to backup API key {currentApiKeyIndex + 1} of {OMDB_API_KEYS.Length}.\n\nYour search will be retried automatically.",
+                    "API Key Rotation", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return true;
+            }
+            else
+            {
+                MessageBox.Show("All API keys have reached their daily limits!\n\nPlease wait 24 hours or get new keys.",
+                    "All Keys Exhausted", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return false;
+            }
+        }
+
+        private static int currentApiKeyIndex = 0;
+        private static string OMDB_API_KEY => OMDB_API_KEYS[currentApiKeyIndex];
         private static readonly HttpClient client = new HttpClient();
 
         // Add these flags
         private bool isShowingMyMovies = false;
         private bool isSearchMode = true;
-
+    
+        private bool isSearchingMovies = true; // true = movies, false = series
         public Form1()
         {
             InitializeComponent();
@@ -41,6 +68,178 @@ namespace My_IMDB
 
             // Allow Enter key to search
             txtsearch.KeyPress += Txtsearch_KeyPress;
+
+            this.FormClosing += (s, e) => ClearSearchCache();
+
+        }
+
+        private void rbmovies_CheckedChanged(object sender, EventArgs e)
+        {
+            if (rbmovies.Checked)
+            {
+                // Only change mode if the state actually changed
+                if (isSearchingMovies != true)
+                {
+                    isSearchingMovies = true;
+
+                    // If we're showing my movies, filter the database view
+                    if (isShowingMyMovies)
+                    {
+                        FilterMyMoviesByType("movie");
+                    }
+                    else
+                    {
+                        // We're in search mode
+                        MessageBox.Show("Search mode: MOVIES only", "Mode Changed",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                        // Clear current results
+                        dataGridView1.DataSource = null;
+                        pictureBox1.Image = null;
+                        txtsearch.Clear();
+                        txtsearch.Focus();
+
+                        // Reset any view state
+                        if (!isShowingMyMovies)
+                        {
+                            addbtn.Text = "Add";
+                            addbtn.Enabled = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        private void rbseiries_CheckedChanged(object sender, EventArgs e)
+        {
+            if (rbseries.Checked)
+            {
+                // Only change mode if the state actually changed
+                if (isSearchingMovies != false)
+                {
+                    isSearchingMovies = false;
+
+                    // If we're showing my movies, filter the database view
+                    if (isShowingMyMovies)
+                    {
+                        FilterMyMoviesByType("series");
+                    }
+                    else
+                    {
+                        // We're in search mode
+                        MessageBox.Show("Search mode: TV SERIES only", "Mode Changed",
+                            MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                        // Clear current results
+                        dataGridView1.DataSource = null;
+                        pictureBox1.Image = null;
+                        txtsearch.Clear();
+                        txtsearch.Focus();
+
+                        // Reset any view state
+                        if (!isShowingMyMovies)
+                        {
+                            addbtn.Text = "Add";
+                            addbtn.Enabled = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        private void DataGridView1_SelectionChanged(object sender, EventArgs e)
+        {
+            // Show summary when selection changes (arrow keys, etc.)
+            ShowSummaryForSelectedMovie();
+        }
+
+        private void FilterMyMoviesByType(string type)
+        {
+            try
+            {
+                using (SqlConnection conn = new SqlConnection(GetConnectionString()))
+                {
+                    conn.Open();
+
+                    // Check if table exists
+                    string checkTable = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = 'IMDB'";
+                    SqlCommand checkCmd = new SqlCommand(checkTable, conn);
+                    int tableExists = (int)checkCmd.ExecuteScalar();
+
+                    if (tableExists == 0)
+                    {
+                        MessageBox.Show("IMDB table not found in database!", "Error",
+                            MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        return;
+                    }
+
+                    // Get filtered movies/series from IMDB table based on type
+                    string query = "SELECT name, year, imdbrating, myrating, genre, type, summary FROM IMDB WHERE type = @type ORDER BY name";
+                    SqlCommand cmd = new SqlCommand(query, conn);
+                    cmd.Parameters.AddWithValue("@type", type);
+
+                    SqlDataReader reader = cmd.ExecuteReader();
+
+                    var myMovies = new List<MovieInfo>();
+
+                    while (reader.Read())
+                    {
+                        string typeValue = reader["type"]?.ToString();
+                        if (string.IsNullOrEmpty(typeValue)) typeValue = "movie";
+
+                        myMovies.Add(new MovieInfo
+                        {
+                            Name = reader["name"].ToString(),
+                            Year = reader["year"].ToString(),
+                            Genre = reader["genre"].ToString(),
+                            Score = reader["imdbrating"].ToString(),
+                            MyRating = reader["myrating"].ToString(),
+                            Type = typeValue,
+                            Summary = reader["summary"]?.ToString() ?? "No summary available",  // ADD THIS
+                            SearchRelevance = 0
+                        });
+                    }
+
+                    reader.Close();
+
+                    if (myMovies.Count > 0)
+                    {
+                        dataGridView1.DataSource = myMovies;
+                        ConfigureMyMoviesGridView();
+
+                        // Ensure we're in the correct mode
+                        isShowingMyMovies = true;
+                        addbtn.Text = "Edit Rating";
+                        addbtn.Enabled = true;
+
+                        string displayType = type == "movie" ? "Movies" : "TV Series";
+                        MessageBox.Show($"Found {myMovies.Count} {displayType} in your collection!",
+                            "Filtered View", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    else
+                    {
+                        string displayType = type == "movie" ? "movies" : "TV series";
+                        DialogResult result = MessageBox.Show($"No {displayType} found in your database.\n\nWould you like to see all items?",
+                            "No Results", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+                        if (result == DialogResult.Yes)
+                        {
+                            // Show all items
+                            ShowMyMoviesFromDatabase();
+                        }
+                        else
+                        {
+                            // Keep the filtered view (empty)
+                            dataGridView1.DataSource = null;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error filtering database: {ex.Message}",
+                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
         }
 
         // Add this new event to prevent unselecting
@@ -174,14 +373,31 @@ namespace My_IMDB
                 {
                     conn.Open();
 
-                    // Search for movies matching the search term (case insensitive)
-                    string query = @"SELECT name, year, imdbrating, myrating, genre 
-                           FROM IMDB 
-                           WHERE name LIKE @search 
-                           ORDER BY name";
+                    // Split search term into words for better matching
+                    string[] searchWords = searchTerm.ToLower().Split(new char[] { ' ' }, StringSplitOptions.RemoveEmptyEntries);
+
+                    // Build a more flexible search query
+                    string query = @"SELECT name, year, imdbrating, myrating, genre, type 
+                   FROM IMDB 
+                   WHERE LOWER(name) LIKE @search1";
+
+                    // Add additional conditions for each word
+                    for (int i = 0; i < searchWords.Length; i++)
+                    {
+                        query += $" OR LOWER(name) LIKE @search{i + 2}";
+                    }
+
+                    query += " ORDER BY name";
 
                     SqlCommand cmd = new SqlCommand(query, conn);
-                    cmd.Parameters.AddWithValue("@search", "%" + searchTerm + "%");
+
+                    // Add parameters for each search pattern
+                    cmd.Parameters.AddWithValue("@search1", "%" + searchTerm.ToLower() + "%");
+
+                    for (int i = 0; i < searchWords.Length; i++)
+                    {
+                        cmd.Parameters.AddWithValue($"@search{i + 2}", "%" + searchWords[i] + "%");
+                    }
 
                     SqlDataReader reader = cmd.ExecuteReader();
 
@@ -189,6 +405,9 @@ namespace My_IMDB
 
                     while (reader.Read())
                     {
+                        string typeValue = reader["type"]?.ToString();
+                        if (string.IsNullOrEmpty(typeValue)) typeValue = "movie";
+
                         searchResults.Add(new MovieInfo
                         {
                             Name = reader["name"].ToString(),
@@ -196,6 +415,7 @@ namespace My_IMDB
                             Genre = reader["genre"].ToString(),
                             Score = reader["imdbrating"].ToString(),
                             MyRating = reader["myrating"].ToString(),
+                            Type = typeValue,
                             SearchRelevance = 0
                         });
                     }
@@ -204,16 +424,21 @@ namespace My_IMDB
 
                     if (searchResults.Count > 0)
                     {
-                        dataGridView1.DataSource = searchResults;
+                        // Remove duplicates (same name)
+                        var uniqueResults = searchResults
+                            .GroupBy(m => m.Name)
+                            .Select(g => g.First())
+                            .ToList();
+
+                        dataGridView1.DataSource = uniqueResults;
                         ConfigureMyMoviesGridView();
-                        MessageBox.Show($"Found {searchResults.Count} movie(s) matching '{searchTerm}' in your collection!",
+                        MessageBox.Show($"Found {uniqueResults.Count} item(s) matching '{searchTerm}' in your collection!",
                             "Search Results", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                     else
                     {
-                        MessageBox.Show($"No movies found matching '{searchTerm}' in your database.",
+                        MessageBox.Show($"No items found matching '{searchTerm}' in your database.\n\nTip: Try searching with partial words!",
                             "Not Found", MessageBoxButtons.OK, MessageBoxIcon.Information);
-                        // Optionally show all movies again
                         ShowMyMoviesFromDatabase();
                     }
                 }
@@ -258,120 +483,228 @@ namespace My_IMDB
 
                 // Also set the current cell to prevent unselecting
                 dataGridView1.CurrentCell = dataGridView1.Rows[e.RowIndex].Cells[0];
+
+                ShowSummaryForSelectedMovie();
+
             }
         }
 
+        // Add this dictionary at the top of your Form1 class to cache search results
+        private Dictionary<string, List<MovieInfo>> searchCache = new Dictionary<string, List<MovieInfo>>();
+
         private async Task SearchMoviesAsync(string searchTerm)
         {
-            try
+            // Track retry attempts
+            int maxRetries = OMDB_API_KEYS.Length;
+            int retryCount = 0;
+            bool success = false;
+
+            while (!success && retryCount < maxRetries)
             {
-                // Show loading cursor and disable button
-                this.Cursor = Cursors.WaitCursor;
-                btnsearch.Enabled = false;
-
-                // Clear the DataGridView before searching
-                dataGridView1.DataSource = null;
-
-                var allMovies = new List<MovieInfo>();
-                int currentPage = 1;
-                bool hasMorePages = true;
-
-                // Search through pages until we find all results or run out
-                while (hasMorePages && allMovies.Count < 100)
+                try
                 {
+                    this.Cursor = Cursors.WaitCursor;
+                    btnsearch.Enabled = false;
+                    dataGridView1.DataSource = null;
+
+                    string searchType = isSearchingMovies ? "movie" : "series";
+                    string resultType = isSearchingMovies ? "movies" : "TV series";
+                    string cacheKey = $"{searchTerm.ToLower()}_{searchType}_{currentApiKeyIndex}"; // Include key index in cache
+
+                    // Check cache first (avoid unnecessary API calls for same search)
+                    if (searchCache.ContainsKey(cacheKey))
+                    {
+                        var cachedResults = searchCache[cacheKey];
+                        if (cachedResults.Count > 0)
+                        {
+                            dataGridView1.DataSource = cachedResults;
+                            ConfigureDataGridView();
+                            MessageBox.Show($"Found {cachedResults.Count} {resultType} matching '{searchTerm}' (from cache).\n\nUsing API Key: {currentApiKeyIndex + 1}",
+                                "Search Results", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            return;
+                        }
+                    }
+
+                    // Search with exact type and limit
                     string encodedSearch = Uri.EscapeDataString(searchTerm);
-                    string url = $"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&s={encodedSearch}&page={currentPage}&type=movie";
+                    string url = $"https://www.omdbapi.com/?apikey={OMDB_API_KEY}&s={encodedSearch}&type={searchType}";
 
                     string jsonResponse = await client.GetStringAsync(url);
                     JObject data = JObject.Parse(jsonResponse);
 
-                    if (data["Response"]?.ToString() == "True")
+                    // Handle API errors
+                    if (data["Response"]?.ToString() == "False")
                     {
-                        var searchResults = data["Search"] as JArray;
+                        string errorMsg = data["Error"]?.ToString();
 
-                        if (searchResults != null && searchResults.Count > 0)
+                        if (errorMsg == "Request limit reached!" || errorMsg == "Daily limit exceeded!")
                         {
-                            foreach (var result in searchResults)
+                            // Switch to next API key
+                            if (SwitchToNextApiKey())
                             {
-                                string imdbID = result["imdbID"]?.ToString();
-                                string title = result["Title"]?.ToString() ?? "";
-                                string year = result["Year"]?.ToString() ?? "";
-
-                                if (!string.IsNullOrEmpty(imdbID))
-                                {
-                                    string detailUrl = $"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&i={imdbID}";
-                                    string detailResponse = await client.GetStringAsync(detailUrl);
-                                    JObject detailData = JObject.Parse(detailResponse);
-
-                                    string imdbScore = detailData["imdbRating"]?.ToString() ?? "N/A";
-
-                                    // ONLY add movies that have a valid score (not N/A)
-                                    if (imdbScore != "N/A")
-                                    {
-                                        allMovies.Add(new MovieInfo
-                                        {
-                                            Name = title,
-                                            Year = year,
-                                            Genre = detailData["Genre"]?.ToString() ?? "N/A",
-                                            Score = imdbScore,
-                                            SearchRelevance = CalculateRelevance(title, searchTerm)
-                                        });
-                                    }
-
-                                    await Task.Delay(100);
-                                }
-                            }
-
-                            int totalResults = int.Parse(data["totalResults"]?.ToString() ?? "0");
-                            if (currentPage * 10 >= totalResults)
-                            {
-                                hasMorePages = false;
+                                retryCount++;
+                                continue; // Retry with new key
                             }
                             else
                             {
-                                currentPage++;
+                                return; // No more keys available
                             }
+                        }
+                        else if (errorMsg == "Invalid API key!")
+                        {
+                            // Switch to next API key
+                            if (SwitchToNextApiKey())
+                            {
+                                retryCount++;
+                                continue; // Retry with new key
+                            }
+                            else
+                            {
+                                return;
+                            }
+                        }
+                        else if (errorMsg == "Movie not found!")
+                        {
+                            MessageBox.Show($"No {searchType}s found matching '{searchTerm}'. Try a different search term.",
+                                "Not Found", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                            return;
                         }
                         else
                         {
-                            hasMorePages = false;
+                            MessageBox.Show($"API Error: {errorMsg}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            return;
                         }
                     }
-                    else
+
+                    var searchResults = data["Search"] as JArray;
+
+                    if (searchResults == null || searchResults.Count == 0)
                     {
-                        hasMorePages = false;
+                        MessageBox.Show($"No {searchType}s found matching '{searchTerm}'. Try different keywords.",
+                            "Not Found", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        return;
                     }
-                }
 
-                // Sort by relevance (most relevant first)
-                var sortedMovies = allMovies.OrderByDescending(m => m.SearchRelevance).ThenBy(m => m.Name).ToList();
+                    // Limit to 10 results
+                    int maxResults = Math.Min(searchResults.Count, 10);
+                    var allResults = new List<MovieInfo>();
 
-                // Show results if found
-                if (sortedMovies.Count > 0)
-                {
-                    dataGridView1.DataSource = sortedMovies;
+                    // Show progress
+                    var progressForm = new Form
+                    {
+                        Text = "Loading Movie Details",
+                        Size = new System.Drawing.Size(350, 100),
+                        FormBorderStyle = FormBorderStyle.FixedDialog,
+                        StartPosition = FormStartPosition.CenterParent,
+                        ControlBox = false
+                    };
+
+                    var progressBar = new ProgressBar
+                    {
+                        Minimum = 0,
+                        Maximum = maxResults,
+                        Location = new System.Drawing.Point(12, 30),
+                        Size = new System.Drawing.Size(310, 23)
+                    };
+
+                    var progressLabel = new Label
+                    {
+                        Text = "Loading movie details...",
+                        Location = new System.Drawing.Point(12, 10),
+                        Size = new System.Drawing.Size(310, 20)
+                    };
+
+                    progressForm.Controls.Add(progressBar);
+                    progressForm.Controls.Add(progressLabel);
+
+                    progressForm.Show(this);
+                    Application.DoEvents();
+
+                    for (int i = 0; i < maxResults; i++)
+                    {
+                        var result = searchResults[i];
+                        string imdbID = result["imdbID"]?.ToString();
+                        string title = result["Title"]?.ToString() ?? "";
+                        string year = result["Year"]?.ToString() ?? "";
+
+                        if (!string.IsNullOrEmpty(imdbID))
+                        {
+                            progressLabel.Text = $"Loading: {title} ({i + 1}/{maxResults})";
+                            progressBar.Value = i + 1;
+                            Application.DoEvents();
+
+                            string detailUrl = $"https://www.omdbapi.com/?apikey={OMDB_API_KEY}&i={imdbID}";
+                            string detailResponse = await client.GetStringAsync(detailUrl);
+                            JObject detailData = JObject.Parse(detailResponse);
+
+                            string imdbScore = detailData["imdbRating"]?.ToString() ?? "N/A";
+                            allResults.Add(new MovieInfo
+                            {
+                                Name = title,
+                                Year = year,
+                                Genre = detailData["Genre"]?.ToString() ?? "N/A",
+                                Score = imdbScore,
+                                MyRating = "Not rated",
+                                SearchRelevance = CalculateRelevance(title, searchTerm),
+                                Type = searchType,
+                                Summary = detailData["Plot"]?.ToString() ?? "No summary available"  // ADD THIS LINE
+                            });
+
+                            // Small delay to be respectful to the API
+                            await Task.Delay(50);
+                        }
+                    }
+
+                    progressForm.Close();
+                    progressForm.Dispose();
+
+                    // Sort by relevance (best matches first)
+                    var sortedResults = allResults
+                        .OrderByDescending(m => m.SearchRelevance)
+                        .ThenBy(m => m.Name)
+                        .ToList();
+
+                    // Cache the results for this search
+                    searchCache[cacheKey] = sortedResults;
+
+                    // Display results
+                    dataGridView1.DataSource = sortedResults;
                     ConfigureDataGridView();
-                    MessageBox.Show($"Found {sortedMovies.Count} movie(s) matching '{searchTerm}'.",
+
+                    MessageBox.Show($"Found {sortedResults.Count} {resultType} matching '{searchTerm}'.\n\nResults are sorted by relevance.\n\nUsing API Key: {currentApiKeyIndex + 1} of {OMDB_API_KEYS.Length}",
                         "Search Results", MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+                    success = true; // Mark as successful
                 }
-                else
+                catch (HttpRequestException ex)
                 {
-                    MessageBox.Show($"No movies found matching '{searchTerm}'.",
-                        "Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    MessageBox.Show($"Network error: {ex.Message}\n\nPlease check your internet connection.",
+                        "Connection Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                     dataGridView1.DataSource = null;
+                    return; // Don't retry on network errors
+                }
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    dataGridView1.DataSource = null;
+                    return;
+                }
+                finally
+                {
+                    this.Cursor = Cursors.Default;
+                    btnsearch.Enabled = true;
                 }
             }
-            catch (Exception ex)
+
+            if (!success)
             {
-                MessageBox.Show($"Error: {ex.Message}\n\nPlease check your internet connection.",
-                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                dataGridView1.DataSource = null;
+                MessageBox.Show("All API keys have been exhausted. Please try again tomorrow or get new keys.",
+                    "Search Failed", MessageBoxButtons.OK, MessageBoxIcon.Error);
             }
-            finally
-            {
-                this.Cursor = Cursors.Default;
-                btnsearch.Enabled = true;
-            }
+        }
+        private void ClearSearchCache()
+        {
+            searchCache.Clear();
         }
 
         private int CalculateRelevance(string title, string searchTerm)
@@ -409,6 +742,12 @@ namespace My_IMDB
                 if (dataGridView1.Columns["SearchRelevance"] != null)
                 {
                     dataGridView1.Columns["SearchRelevance"].Visible = false;
+                }
+
+                // ADD THIS - Hide the Summary column
+                if (dataGridView1.Columns["Summary"] != null)
+                {
+                    dataGridView1.Columns["Summary"].Visible = false;
                 }
 
                 // Set friendly column headers
@@ -655,7 +994,7 @@ namespace My_IMDB
                 {
                     conn.Open();
 
-                    // First check if movie already exists in database
+                    // First check if movie/series already exists in database
                     string checkQuery = "SELECT COUNT(*) FROM IMDB WHERE name = @name";
                     using (SqlCommand checkCmd = new SqlCommand(checkQuery, conn))
                     {
@@ -670,9 +1009,27 @@ namespace My_IMDB
                         }
                     }
 
-                    // If not exists, add the movie
-                    string query = @"INSERT INTO IMDB (name, year, imdbrating, myrating, genre) 
-                           VALUES (@name, @year, @imdbrating, @myrating, @genre)";
+                    // FIX: Ensure type is properly set
+                    string movieType = movie.Type;
+
+                    // If Type is null or empty, determine it from the current search mode
+                    if (string.IsNullOrEmpty(movieType))
+                    {
+                        movieType = isSearchingMovies ? "movie" : "series";
+                    }
+
+                    // If it's still null (shouldn't happen), default to "movie"
+                    if (string.IsNullOrEmpty(movieType))
+                    {
+                        movieType = "movie";
+                    }
+
+                    // Get summary (default if null)
+                    string summary = string.IsNullOrEmpty(movie.Summary) ? "No summary available" : movie.Summary;
+
+                    // If not exists, add the movie/series (INCLUDING SUMMARY)
+                    string query = @"INSERT INTO IMDB (name, year, imdbrating, myrating, genre, type, summary) 
+                   VALUES (@name, @year, @imdbrating, @myrating, @genre, @type, @summary)";
 
                     using (SqlCommand cmd = new SqlCommand(query, conn))
                     {
@@ -681,17 +1038,19 @@ namespace My_IMDB
                         cmd.Parameters.AddWithValue("@imdbrating", movie.Score);
                         cmd.Parameters.AddWithValue("@myrating", userRating);
                         cmd.Parameters.AddWithValue("@genre", movie.Genre);
+                        cmd.Parameters.AddWithValue("@type", movieType);
+                        cmd.Parameters.AddWithValue("@summary", summary);  // ADD THIS LINE
 
                         int rowsAffected = cmd.ExecuteNonQuery();
 
                         if (rowsAffected > 0)
                         {
-                            MessageBox.Show($"Movie '{movie.Name}' added to your database successfully!\n\nYour rating: {userRating}/10",
+                            MessageBox.Show($"'{movie.Name}' added to your database successfully!\n\nYour rating: {userRating}/10\nType: {movieType}",
                                 "Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                         else
                         {
-                            MessageBox.Show("Failed to add movie to database.",
+                            MessageBox.Show("Failed to add to database.",
                                 "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                         }
                     }
@@ -718,10 +1077,23 @@ namespace My_IMDB
                 // Clear the DataGridView
                 dataGridView1.DataSource = null;
 
-                // Show my movies from database
-                ShowMyMoviesFromDatabase();
-
-                // Disable add button (can't add while viewing database)
+                // Show my movies from database based on current radio button selection
+                if (rbmovies.Checked)
+                {
+                    // Show only movies
+                    FilterMyMoviesByType("movie");
+                    // Don't change the radio button state
+                }
+                else if (rbseries.Checked)
+                {
+                    // Show only series
+                    FilterMyMoviesByType("series");
+                }
+                else
+                {
+                    // If no radio button is checked, show all
+                    ShowMyMoviesFromDatabase();
+                }
 
                 // Change mode flags
                 isShowingMyMovies = true;
@@ -730,6 +1102,10 @@ namespace My_IMDB
                 // Change button appearance
                 btnmymovies.BackColor = System.Drawing.Color.Green;
                 btnmymovies.Text = "Click to Search Online Titles";
+
+                // Set add button text for edit mode
+                addbtn.Text = "Edit Rating";
+                addbtn.Enabled = true;
             }
         }
 
@@ -754,14 +1130,17 @@ namespace My_IMDB
                         return;
                     }
 
-                    // Get all movies from IMDB table
-                    SqlCommand cmd = new SqlCommand("SELECT name, year, imdbrating, myrating, genre FROM IMDB ORDER BY name", conn);
+                    // Get ALL movies/series from IMDB table (no type filter)
+                    SqlCommand cmd = new SqlCommand("SELECT name, year, imdbrating, myrating, genre, type, summary FROM IMDB ORDER BY name", conn);
                     SqlDataReader reader = cmd.ExecuteReader();
 
                     var myMovies = new List<MovieInfo>();
 
                     while (reader.Read())
                     {
+                        string typeValue = reader["type"]?.ToString();
+                        if (string.IsNullOrEmpty(typeValue)) typeValue = "movie";
+                        // When adding to myMovies, include Summary
                         myMovies.Add(new MovieInfo
                         {
                             Name = reader["name"].ToString(),
@@ -769,6 +1148,8 @@ namespace My_IMDB
                             Genre = reader["genre"].ToString(),
                             Score = reader["imdbrating"].ToString(),
                             MyRating = reader["myrating"].ToString(),
+                            Type = typeValue,
+                            Summary = reader["summary"]?.ToString() ?? "No summary available",  // ADD THIS
                             SearchRelevance = 0
                         });
                     }
@@ -781,17 +1162,20 @@ namespace My_IMDB
                         ConfigureMyMoviesGridView();
 
                         // Change add button to edit button
-                        addbtn.Text = "Edit ";
-                        addbtn.Enabled = true;  // Enable it for editing
+                        addbtn.Text = "Edit Rating";
+                        addbtn.Enabled = true;
 
+                        // Count movies and series
+                        int movieCount = myMovies.Count(m => m.Type == "movie");
+                        int seriesCount = myMovies.Count(m => m.Type == "series");
 
-                        MessageBox.Show($"Found {myMovies.Count} movie(s) in your collection!",
-                            "My Movies", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show($"Found {myMovies.Count} item(s) in your collection!\n\nMovies: {movieCount}\nTV Series: {seriesCount}",
+                            "My Collection", MessageBoxButtons.OK, MessageBoxIcon.Information);
                     }
                     else
                     {
-                        MessageBox.Show("No movies found in your database.\n\nClick 'Search' to find and add movies.",
-                            "My Movies", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        MessageBox.Show("No items found in your database.\n\nClick 'Search' to find and add movies or series.",
+                            "My Collection", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         dataGridView1.DataSource = null;
                         GoBackToSearchMode();
                     }
@@ -799,7 +1183,7 @@ namespace My_IMDB
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Error loading movies from database: {ex.Message}",
+                MessageBox.Show($"Error loading from database: {ex.Message}",
                     "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 dataGridView1.DataSource = null;
                 GoBackToSearchMode();
@@ -813,8 +1197,21 @@ namespace My_IMDB
             isSearchMode = true;
             addbtn.Enabled = true;
             addbtn.Text = "Add";
+            btnmymovies.BackColor = System.Drawing.Color.Black;
             btnmymovies.Text = "My Movies And Series";
             dataGridView1.DataSource = null;
+
+            // Clear any filters and show appropriate message based on selected type
+            if (rbmovies.Checked)
+            {
+                MessageBox.Show("Switched to ONLINE SEARCH mode - searching for MOVIES",
+                    "Mode Changed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else if (rbseries.Checked)
+            {
+                MessageBox.Show("Switched to ONLINE SEARCH mode - searching for TV SERIES",
+                    "Mode Changed", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
         }
 
         private void ConfigureMyMoviesGridView()
@@ -825,6 +1222,12 @@ namespace My_IMDB
                 if (dataGridView1.Columns["SearchRelevance"] != null)
                 {
                     dataGridView1.Columns["SearchRelevance"].Visible = false;
+                }
+
+                // ADD THIS - Hide the Summary column (fixes your issue)
+                if (dataGridView1.Columns["Summary"] != null)
+                {
+                    dataGridView1.Columns["Summary"].Visible = false;
                 }
 
                 // Set friendly column headers
@@ -838,6 +1241,8 @@ namespace My_IMDB
                     dataGridView1.Columns["Score"].HeaderText = "IMDb Score";
                 if (dataGridView1.Columns["MyRating"] != null)
                     dataGridView1.Columns["MyRating"].HeaderText = "My Rating";
+                if (dataGridView1.Columns["Type"] != null)
+                    dataGridView1.Columns["Type"].HeaderText = "Type";
 
                 // Auto-size columns
                 dataGridView1.AutoResizeColumns(DataGridViewAutoSizeColumnsMode.AllCells);
@@ -848,54 +1253,80 @@ namespace My_IMDB
         }
         private async Task LoadMoviePoster(string movieName, string movieYear)
         {
-            try
+            int maxRetries = OMDB_API_KEYS.Length;
+            int retryCount = 0;
+            bool success = false;
+
+            while (!success && retryCount < maxRetries)
             {
-                string encodedTitle = Uri.EscapeDataString(movieName);
-                string url = $"http://www.omdbapi.com/?apikey={OMDB_API_KEY}&t={encodedTitle}&plot=short";
-
-                using (var httpClient = new HttpClient())
+                try
                 {
-                    string jsonResponse = await httpClient.GetStringAsync(url);
-                    JObject data = JObject.Parse(jsonResponse);
+                    string encodedTitle = Uri.EscapeDataString(movieName);
+                    string url = $"https://www.omdbapi.com/?apikey={OMDB_API_KEY}&t={encodedTitle}&plot=short";
 
-                    if (data["Response"]?.ToString() == "True")
+                    using (var httpClient = new HttpClient())
                     {
-                        string posterUrl = data["Poster"]?.ToString();
+                        string jsonResponse = await httpClient.GetStringAsync(url);
+                        JObject data = JObject.Parse(jsonResponse);
 
-                        if (!string.IsNullOrEmpty(posterUrl) && posterUrl != "N/A")
+                        if (data["Response"]?.ToString() == "True")
                         {
-                            // Download the poster image
-                            using (var posterClient = new HttpClient())
+                            string posterUrl = data["Poster"]?.ToString();
+
+                            if (!string.IsNullOrEmpty(posterUrl) && posterUrl != "N/A")
                             {
-                                byte[] imageData = await posterClient.GetByteArrayAsync(posterUrl);
-                                using (var ms = new System.IO.MemoryStream(imageData))
+                                using (var posterClient = new HttpClient())
                                 {
-                                    Image posterImage = Image.FromStream(ms);
-                                    pictureBox1.Image = posterImage;
-                                    pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
+                                    byte[] imageData = await posterClient.GetByteArrayAsync(posterUrl);
+                                    using (var ms = new System.IO.MemoryStream(imageData))
+                                    {
+                                        Image posterImage = Image.FromStream(ms);
+                                        pictureBox1.Image = posterImage;
+                                        pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
+                                        success = true;
+                                    }
                                 }
+                            }
+                            else
+                            {
+                                pictureBox1.Image = null;
+                                MessageBox.Show($"No poster found for '{movieName}'.",
+                                    "Poster Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                success = true; // Not an API error, just no poster
                             }
                         }
                         else
                         {
-                            pictureBox1.Image = null;
-                            MessageBox.Show($"No poster found for '{movieName}'.",
-                                "Poster Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                            string errorMsg = data["Error"]?.ToString();
+                            if (errorMsg == "Request limit reached!" || errorMsg == "Invalid API key!")
+                            {
+                                if (SwitchToNextApiKey())
+                                {
+                                    retryCount++;
+                                    continue;
+                                }
+                                else
+                                {
+                                    pictureBox1.Image = null;
+                                    MessageBox.Show($"No poster found for '{movieName}'.", "Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                    return;
+                                }
+                            }
+                            else
+                            {
+                                pictureBox1.Image = null;
+                                MessageBox.Show($"Movie '{movieName}' not found.", "Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                                success = true;
+                            }
                         }
                     }
-                    else
-                    {
-                        pictureBox1.Image = null;
-                        MessageBox.Show($"Movie '{movieName}' not found.",
-                            "Movie Not Found", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error loading poster: {ex.Message}",
-                    "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                pictureBox1.Image = null;
+                catch (Exception ex)
+                {
+                    MessageBox.Show($"Error loading poster: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                    pictureBox1.Image = null;
+                    return;
+                }
             }
         }
 
@@ -943,8 +1374,137 @@ namespace My_IMDB
             btnshowposter.Enabled = true;
             btnshowposter.Text = "Show Poster";
         }
-    }
+        private void btnsummary_Click(object sender, EventArgs e)
+        {
+            // Check if a movie is selected
+            if (dataGridView1.SelectedRows.Count == 0 && dataGridView1.SelectedCells.Count == 0)
+            {
+                MessageBox.Show("Please select a movie or series first by clicking on any cell.", "No Selection",
+                    MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
 
+            MovieInfo selectedMovie = null;
+
+            // Get selected movie from either selected row or selected cell
+            if (dataGridView1.SelectedRows.Count > 0)
+            {
+                selectedMovie = (MovieInfo)dataGridView1.SelectedRows[0].DataBoundItem;
+            }
+            else if (dataGridView1.SelectedCells.Count > 0)
+            {
+                int rowIndex = dataGridView1.SelectedCells[0].RowIndex;
+                selectedMovie = (MovieInfo)dataGridView1.Rows[rowIndex].DataBoundItem;
+            }
+
+            if (selectedMovie == null)
+            {
+                MessageBox.Show("Please select a valid movie or series.", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            // Get the summary (from the selected movie object)
+            string summary = selectedMovie.Summary ?? "No summary available for this title.";
+
+            // Display the summary in pictureBox1
+            DisplaySummaryInPictureBox(selectedMovie.Name, summary);
+        }
+
+        private void DisplaySummaryInPictureBox(string title, string summary)
+        {
+            try
+            {
+                // Create a bitmap to draw the text on
+                Bitmap bmp = new Bitmap(pictureBox1.Width, pictureBox1.Height);
+
+                using (Graphics g = Graphics.FromImage(bmp))
+                {
+                    // Clear with dark background
+                    g.Clear(Color.FromArgb(30, 30, 30));
+
+                    // Set up font and formatting
+                    using (Font titleFont = new Font("Arial", 14, FontStyle.Bold))
+                    using (Font summaryFont = new Font("Arial", 10, FontStyle.Regular))
+                    {
+                        // Calculate title position
+                        SizeF titleSize = g.MeasureString(title, titleFont);
+                        float titleX = (bmp.Width - titleSize.Width) / 2;
+                        float titleY = 15;
+
+                        // Draw a separator line
+                        Pen linePen = new Pen(Color.Gold, 2);
+
+                        // Draw title
+                        using (SolidBrush titleBrush = new SolidBrush(Color.Gold))
+                        {
+                            g.DrawString(title, titleFont, titleBrush, titleX, titleY);
+                        }
+
+                        // Draw separator line
+                        float lineY = titleY + titleSize.Height + 5;
+                        g.DrawLine(linePen, 50, lineY, bmp.Width - 50, lineY);
+
+                        // Draw summary with word wrap
+                        RectangleF summaryRect = new RectangleF(15, lineY + 15, bmp.Width - 30, bmp.Height - (lineY + 25));
+                        using (SolidBrush summaryBrush = new SolidBrush(Color.White))
+                        {
+                            g.DrawString(summary, summaryFont, summaryBrush, summaryRect);
+                        }
+                    }
+                }
+
+                // Display the image
+                pictureBox1.Image = bmp;
+                pictureBox1.SizeMode = PictureBoxSizeMode.Zoom;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Error displaying summary: {ex.Message}", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+        private void ShowSummaryForSelectedMovie()
+        {
+            // Check if a movie is selected
+            if (dataGridView1.SelectedRows.Count == 0 && dataGridView1.SelectedCells.Count == 0)
+            {
+                return; // No selection, do nothing
+            }
+
+            MovieInfo selectedMovie = null;
+
+            // Get selected movie from either selected row or selected cell
+            if (dataGridView1.SelectedRows.Count > 0)
+            {
+                selectedMovie = (MovieInfo)dataGridView1.SelectedRows[0].DataBoundItem;
+            }
+            else if (dataGridView1.SelectedCells.Count > 0)
+            {
+                int rowIndex = dataGridView1.SelectedCells[0].RowIndex;
+                if (rowIndex >= 0 && rowIndex < dataGridView1.Rows.Count)
+                {
+                    selectedMovie = (MovieInfo)dataGridView1.Rows[rowIndex].DataBoundItem;
+                }
+            }
+
+            if (selectedMovie != null)
+            {
+                // Get the summary
+                string summary = selectedMovie.Summary ?? "No summary available for this title.";
+
+                // Display the summary in pictureBox1
+                DisplaySummaryInPictureBox(selectedMovie.Name, summary);
+            }
+        }
+
+        private void dataGridView1_CurrentCellChanged(object sender, EventArgs e)
+        {
+            ShowSummaryForSelectedMovie();
+        }
+    }
+    //http://www.omdbapi.com/?apikey=a9e37134&s=batman&type=movie
+    // Movie information class
     // Movie information class
     // Movie information class
     public class MovieInfo
@@ -953,7 +1513,10 @@ namespace My_IMDB
         public string Year { get; set; }
         public string Genre { get; set; }
         public string Score { get; set; }
-        public string MyRating { get; set; }  // Add this property
+        public string MyRating { get; set; }
         public int SearchRelevance { get; set; }
+        public string Type { get; set; }
+        public string Summary { get; set; }  // ADD THIS LINE
     }
+
 }
