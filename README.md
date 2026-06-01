@@ -21,11 +21,10 @@ A Windows Forms application for keeping a personal record of movies and TV serie
 3. Press F5 to run the application
 
 ## Project Structure
-IMDB-recorder/
-├── My IMDB/ # Main application files
-├── My IMDB.sln # Visual Studio solution file
-├── .gitignore
-└── .gitattributes
+- `My IMDB/` - Main application files
+- `My IMDB.sln` - Visual Studio solution file
+- `.gitignore` - Git ignore rules
+- `.gitattributes` - Git attributes
 
 
 ## Author
