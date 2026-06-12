@@ -15,10 +15,7 @@ namespace My_IMDB
     {
         private static readonly string[] OMDB_API_KEYS = new string[]
         {
-            "a9e37134",
-            "406ab9a4",
-            "dd8596be",
-            "ccf8fcc7"
+            "ADD Your API her from Omdb site"
         };
 
         private static int currentApiKeyIndex = 0;
